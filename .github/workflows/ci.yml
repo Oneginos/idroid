@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang make qemu-user python3-pip
+          pip install --break-system-packages ziglang
+
+      - name: Build and test (ASan + UBSan)
+        run: make test
+
+      - name: Dump the hello Mach-O (Day 1 proof)
+        run: |
+          make dump | tee build/hello.dump.txt
+          make imports | tee build/hello.imports.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hello-dump
+          path: |
+            build/hello.dump.txt
+            build/hello.imports.txt
