@@ -57,7 +57,7 @@ On an arm64 host such as Termux, build the runner natively: `make RUN_CC=cc run-
 
 ## Status
 
-See [ROADMAP.md](ROADMAP.md). Contributors, human or AI: read [AGENTS.md](AGENTS.md) first.
+Day 1 (parser) and Day 2 (loader, shims, runner) are done and green. Day 3 (Objective-C) is in progress. See [ROADMAP.md](ROADMAP.md). Contributors, human or AI: read [AGENTS.md](AGENTS.md) first.
 
 ## Prior art
 

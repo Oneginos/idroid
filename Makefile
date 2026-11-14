@@ -9,13 +9,14 @@ BUILD   := build
 RUN_CC  ?= $(ZIGCC) -target aarch64-linux-musl
 
 LOADER  := loader/macho.c loader/load.c
+SHIMS   := shim/shims.c shim/variadic_aarch64.S
 HEADERS := loader/macho.h loader/load.h shim/shims.h
-GUESTS  := $(BUILD)/hello.macho $(BUILD)/guest_shims.macho $(BUILD)/guest_missing.macho
+GUESTS  := $(BUILD)/hello.macho $(BUILD)/guest_shims.macho $(BUILD)/guest_missing.macho $(BUILD)/guest_printf.macho $(BUILD)/guest_stdio.macho
 
 # qemu-aarch64 is only needed when the host is not arm64.
 RUNNER  := $(shell [ "$$(uname -m)" = aarch64 ] || echo qemu-aarch64)
 
-.PHONY: all test run run-test dump imports clean
+.PHONY: all test run run-test objc-probe dump imports clean
 all: $(BUILD)/machodump $(BUILD)/idroid-run $(GUESTS)
 
 $(BUILD):
@@ -28,11 +29,12 @@ $(BUILD)/machodump: tools/machodump.c loader/macho.c loader/macho.h | $(BUILD)
 $(BUILD)/hello.macho: tests/hello.c | $(BUILD)
 	$(ZIGCC) -target aarch64-macos $< -o $@
 
+# -fno-sanitize=undefined: zig's debug builds link a UBSan runtime that drags in ~90 unrelated imports
 $(BUILD)/guest_%.macho: tests/guest_%.c | $(BUILD)
-	$(ZIGCC) -target aarch64-macos $< -o $@
+	$(ZIGCC) -target aarch64-macos -fno-sanitize=undefined $< -o $@
 
-$(BUILD)/idroid-run: tools/idroid-run.c $(LOADER) shim/shims.c $(HEADERS) | $(BUILD)
-	$(RUN_CC) $(CFLAGS) -O2 tools/idroid-run.c $(LOADER) shim/shims.c -o $@
+$(BUILD)/idroid-run: tools/idroid-run.c $(LOADER) $(SHIMS) $(HEADERS) | $(BUILD)
+	$(RUN_CC) $(CFLAGS) -O2 tools/idroid-run.c $(LOADER) $(SHIMS) -o $@
 
 $(BUILD)/test_macho: tests/test_macho.c loader/macho.c loader/macho.h | $(BUILD)
 	$(CC) $(CFLAGS) $(SAN) tests/test_macho.c loader/macho.c -o $@
@@ -51,6 +53,14 @@ run: $(BUILD)/idroid-run $(BUILD)/hello.macho
 
 run-test: $(BUILD)/idroid-run $(GUESTS)
 	sh tests/run_guests.sh "$(RUNNER)" $(BUILD)
+
+# Objective-C guest built with no Apple SDK (zig has no libobjc stub, hence dynamic_lookup).
+$(BUILD)/objc_probe.macho: tests/objc/probe.m | $(BUILD)
+	$(ZIGCC) -x objective-c -fno-sanitize=undefined -target aarch64-macos $< -Wl,-undefined,dynamic_lookup -o $@
+
+# Not in run-test until the runtime exists: shows what the guest still needs, as a TRACE list.
+objc-probe: $(BUILD)/idroid-run $(BUILD)/objc_probe.macho
+	-$(RUNNER) $(BUILD)/idroid-run $(BUILD)/objc_probe.macho
 
 dump: $(BUILD)/machodump $(BUILD)/hello.macho
 	$(BUILD)/machodump $(BUILD)/hello.macho

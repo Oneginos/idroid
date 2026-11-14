@@ -1,11 +1,13 @@
 #define _GNU_SOURCE
 #include "shims.h"
 
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/random.h>
 #include <unistd.h>
 
 /* ---- libSystem passthroughs ----------------------------------------------
@@ -40,6 +42,73 @@ static void *shim_memset_chk(void *d, int c, size_t n, size_t dl)           { if
 static char *shim_strcpy_chk(char *d, const char *s, size_t dl)             { if (strlen(s) + 1 > dl) chk_fail("__strcpy_chk");  return strcpy(d, s); }
 static char *shim_strncpy_chk(char *d, const char *s, size_t n, size_t dl)  { if (n > dl) chk_fail("__strncpy_chk"); return strncpy(d, s, n); }
 
+/* Variadic functions: the entry points are assembly trampolines (variadic_aarch64.S) that rebuild
+ * the guest's stack-passed arguments into a va_list. Plain passthroughs would read registers. */
+extern void shim_printf(void), shim_sprintf(void), shim_snprintf(void), shim_dprintf(void);
+extern void shim___snprintf_chk(void), shim___sprintf_chk(void), shim_fprintf(void);
+
+/* Targets of the fortified trampolines. Not static: the assembly refers to them by name. */
+__attribute__((used)) int shim_vsnprintf_chk(char *s, size_t maxlen, int flag, size_t slen, const char *fmt, va_list ap)
+{
+    (void)flag;
+    if (maxlen > slen) chk_fail("__snprintf_chk");
+    return vsnprintf(s, maxlen, fmt, ap);
+}
+
+__attribute__((used)) int shim_vsprintf_chk(char *s, int flag, size_t slen, const char *fmt, va_list ap)
+{
+    (void)flag;
+    if (slen == (size_t)-1) return vsprintf(s, fmt, ap); /* destination size unknown */
+    int n = vsnprintf(s, slen, fmt, ap);
+    if (n >= 0 && (size_t)n >= slen) chk_fail("__sprintf_chk");
+    return n;
+}
+
+/* ---- data symbols ---------------------------------------------------------------------------
+ * An import is not always a function. A bind slot receives the ADDRESS of the symbol, so a data
+ * symbol needs real storage. Binding one to a code thunk would "work" only while nobody reads it.
+ *
+ * ___stack_chk_guard is the stack-protector canary: the guest reads it in every protected function's
+ * prologue and epilogue. Random per process, like the real one. */
+static uintptr_t stack_guard = 0x2f0a5c91d3e7b400ull;
+
+__attribute__((constructor)) static void init_stack_guard(void)
+{
+    uintptr_t g;
+    if (getrandom(&g, sizeof g, 0) == (ssize_t)sizeof g) stack_guard = g & ~(uintptr_t)0xff; /* low byte 0, as on Apple */
+}
+
+static void stack_chk_fail(void)
+{
+    fflush(stdout);
+    fprintf(stderr, "[idroid] CRASH: stack smashing detected in the guest (___stack_chk_fail)\n");
+    abort();
+}
+
+#if defined(__aarch64__)
+/* Apple's stdout/stderr are FILE pointers exported as the data symbols ___stdoutp / ___stderrp.
+ * The guest treats FILE as opaque only if it avoids Apple's inline putc/getc macros, which poke at
+ * FILE's fields; those are logged in TRACE.md as unsupported. */
+static FILE *apple_stdout, *apple_stderr;
+__attribute__((constructor)) static void init_apple_stdio(void) { apple_stdout = stdout; apple_stderr = stderr; }
+
+/* Apple's va_list is a plain pointer to the next stack argument. AAPCS64's is a 32-byte struct.
+ * Wrap the pointer in a struct that says "everything remaining is on the stack". */
+typedef struct { void *stack, *gr_top, *vr_top; int gr_offs, vr_offs; } aapcs_va_t;
+_Static_assert(sizeof(va_list) == sizeof(aapcs_va_t), "unexpected va_list layout");
+
+static void from_apple_va(va_list *out, void *apple_ap)
+{
+    aapcs_va_t t = { apple_ap, 0, 0, 0, 0 };
+    memcpy(out, &t, sizeof t);
+}
+
+static int shim_vprintf(const char *fmt, void *ap)               { va_list v; from_apple_va(&v, ap); return vprintf(fmt, v); }
+static int shim_vsprintf(char *s, const char *fmt, void *ap)     { va_list v; from_apple_va(&v, ap); return vsprintf(s, fmt, v); }
+static int shim_vsnprintf(char *s, size_t n, const char *fmt, void *ap) { va_list v; from_apple_va(&v, ap); return vsnprintf(s, n, fmt, v); }
+static int shim_vfprintf(FILE *f, const char *fmt, void *ap)     { va_list v; from_apple_va(&v, ap); return vfprintf(f, fmt, v); }
+#endif
+
 typedef struct { const char *name; void *fn; } shim_t;
 
 static const shim_t table[] = {
@@ -68,6 +137,25 @@ static const shim_t table[] = {
     { "___memset_chk",  (void *)shim_memset_chk },
     { "___strcpy_chk",  (void *)shim_strcpy_chk },
     { "___strncpy_chk", (void *)shim_strncpy_chk },
+    { "_printf",   (void *)shim_printf },
+    { "_sprintf",  (void *)shim_sprintf },
+    { "_snprintf", (void *)shim_snprintf },
+    { "_dprintf",  (void *)shim_dprintf },
+    { "___snprintf_chk", (void *)shim___snprintf_chk },
+    { "___sprintf_chk",  (void *)shim___sprintf_chk },
+    { "_fprintf",  (void *)shim_fprintf },
+    { "_vprintf",   (void *)shim_vprintf },
+    { "_vsprintf",  (void *)shim_vsprintf },
+    { "_vsnprintf", (void *)shim_vsnprintf },
+    { "_vfprintf",  (void *)shim_vfprintf },
+    { "_fputs",   (void *)fputs },
+    { "_fputc",   (void *)fputc },
+    { "_fwrite",  (void *)fwrite },
+    { "_fflush",  (void *)fflush },
+    { "___stdoutp", (void *)&apple_stdout },   /* data: address of a FILE* variable */
+    { "___stderrp", (void *)&apple_stderr },
+    { "___stack_chk_guard", (void *)&stack_guard },  /* data */
+    { "___stack_chk_fail",  (void *)stack_chk_fail },
     { "_getpid",  (void *)getpid },
     { "dyld_stub_binder", (void *)stub_binder },
 };

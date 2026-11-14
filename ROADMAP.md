@@ -19,9 +19,12 @@ The bet: get a real iOS binary drawing pixels on Android in a week. Not all of i
 - **Proof:** the hello Mach-O prints to stdout under `qemu-aarch64` in CI.
 
 ## Day 3: Objective-C
-- Build objc4 and libdispatch for Linux/bionic.
-- Handle `__objc_*` sections and class and category registration at load time.
-- **Proof:** an Objective-C program with a class, a method call and `NSLog`-style output runs in CI.
+Decision (2026-11-14): write a small runtime that reads Apple's Objective-C metadata directly, instead of porting objc4.
+Why: objc4 depends on dyld shared-cache hooks, os_unfair_lock, pthread TLS keys and Apple-only C++ headers, so porting it is weeks. GNUstep's libobjc2 uses a different data layout than Apple's compiler emits. Everything a first guest needs (class lists, method lists, selector references) is plain data we can read, as `tests/objc/probe.m` shows.
+- Done: variadic calling-convention shims (printf family), data symbols, stdio. See TRACE.md.
+- Next: `objc/` runtime: `objc_msgSend` (assembly), selector interning, class registration from `__objc_classlist`, `__objc_empty_cache`, NSObject root class, `objc_alloc`/`retain`/`release`.
+- libdispatch moves to Day 4: it builds on Linux upstream, so it fits with Foundation.
+- **Proof:** the probe runs and prints `answer=42 sum=42`, then a guest subclassing NSObject with an ivar and instance methods runs in CI.
 
 ## Day 4: Foundation
 - Bring in CoreFoundation and Foundation pieces: strings, arrays, dictionaries, `NSFileManager`, JSON.
