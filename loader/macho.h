@@ -78,6 +78,10 @@ typedef struct {
     int      has_symtab;
 
     int      has_dyld_info;  /* LC_DYLD_INFO(_ONLY): classic rebase/bind opcodes */
+    uint32_t rebase_off, rebase_size;
+    uint32_t bind_off, bind_size;
+    uint32_t weak_bind_off, weak_bind_size;
+    uint32_t lazy_bind_off, lazy_bind_size;
     int      has_chained_fixups;
     uint32_t chained_fixups_off, chained_fixups_size;
     int      has_exports_trie;

@@ -16,17 +16,21 @@ jobs:
           sudo apt-get install -y clang make qemu-user python3-pip
           pip install --break-system-packages ziglang
 
-      - name: Build and test (ASan + UBSan)
+      - name: Unit tests (ASan + UBSan)
         run: make test
 
-      - name: Dump the hello Mach-O (Day 1 proof)
+      - name: End-to-end - run real arm64 Mach-O guests under qemu-aarch64
+        run: make run-test 2>&1 | tee build/run-test.txt
+
+      - name: Dump the hello Mach-O
         run: |
           make dump | tee build/hello.dump.txt
           make imports | tee build/hello.imports.txt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: hello-dump
+          name: day2-proof
           path: |
+            build/run-test.txt
             build/hello.dump.txt
             build/hello.imports.txt

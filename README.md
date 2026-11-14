@@ -39,10 +39,21 @@ The CPU is already arm64, so nothing needs emulating. What iOS apps need is the 
 | `objc/` | Objective-C runtime port |
 | `foundation/` | Foundation / CoreFoundation pieces |
 | `gfx/` | SDL/GLES display layer |
-| `tools/` | `machodump`: inspect any Mach-O (`--imports` lists what it needs from the OS) |
+| `tools/` | `machodump` (inspect a Mach-O; `--imports` lists what it needs from the OS) and `idroid-run` (load and run an arm64 Mach-O) |
 | `apps/` | per-app notes and test scripts (no binaries) |
 | `tests/` | CI test suite |
 | `TRACE.md` | unresolved symbols and selectors, by app |
+
+## Try it
+
+```bash
+sudo apt-get install -y clang make qemu-user python3-pip && pip install --break-system-packages ziglang
+make test       # unit tests (ASan + UBSan), any Linux host
+make run-test   # runs real arm64 macOS binaries through the loader under qemu-aarch64
+make run        # prints: hello from a Mach-O
+```
+
+On an arm64 host such as Termux, build the runner natively: `make RUN_CC=cc run-test`.
 
 ## Status
 

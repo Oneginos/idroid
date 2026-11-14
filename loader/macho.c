@@ -225,9 +225,22 @@ static int parse_slice(macho_t *m, char *err, size_t errlen)
             m->has_uuid = 1;
             break;
         case LC_DYLD_INFO:
-        case LC_DYLD_INFO_ONLY:
+        case LC_DYLD_INFO_ONLY: {
+            if (cmdsize < 48) { seterr(err, errlen, "LC_DYLD_INFO too small"); return -1; }
             m->has_dyld_info = 1;
+            m->rebase_off = rd32(c + 8);        m->rebase_size = rd32(c + 12);
+            m->bind_off = rd32(c + 16);         m->bind_size = rd32(c + 20);
+            m->weak_bind_off = rd32(c + 24);    m->weak_bind_size = rd32(c + 28);
+            m->lazy_bind_off = rd32(c + 32);    m->lazy_bind_size = rd32(c + 36);
+            if (!in_range(m->rebase_off, m->rebase_size, len) ||
+                !in_range(m->bind_off, m->bind_size, len) ||
+                !in_range(m->weak_bind_off, m->weak_bind_size, len) ||
+                !in_range(m->lazy_bind_off, m->lazy_bind_size, len)) {
+                seterr(err, errlen, "dyld info is outside the file");
+                return -1;
+            }
             break;
+        }
         case LC_DYLD_CHAINED_FIXUPS:
         case LC_DYLD_EXPORTS_TRIE: {
             if (cmdsize < 16) { seterr(err, errlen, "linkedit data command too small"); return -1; }
