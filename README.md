@@ -35,8 +35,8 @@ The CPU is already arm64, so nothing needs emulating. What iOS apps need is the 
 | Path | What |
 |---|---|
 | `loader/` | Mach-O parser and loader |
-| `shim/` | libSystem shims |
-| `objc/` | Objective-C runtime port |
+| `shim/` | libSystem shims, including the variadic-ABI trampolines |
+| `objc/` | Objective-C runtime: reads Apple's compiled metadata in place (`objc_msgSend`, NSObject, ARC) |
 | `foundation/` | Foundation / CoreFoundation pieces |
 | `gfx/` | SDL/GLES display layer |
 | `tools/` | `machodump` (inspect a Mach-O; `--imports` lists what it needs from the OS) and `idroid-run` (load and run an arm64 Mach-O) |
@@ -57,7 +57,7 @@ On an arm64 host such as Termux, build the runner natively: `make RUN_CC=cc run-
 
 ## Status
 
-Day 1 (parser) and Day 2 (loader, shims, runner) are done and green. Day 3 (Objective-C) is in progress. See [ROADMAP.md](ROADMAP.md). Contributors, human or AI: read [AGENTS.md](AGENTS.md) first.
+Days 1-2 (Mach-O parser, loader, shims, runner) are done and green. Day 3 (Objective-C runtime) is done locally; Day 4 (blocks, Foundation) is next. See [ROADMAP.md](ROADMAP.md). Contributors, human or AI: read [AGENTS.md](AGENTS.md) first.
 
 ## Prior art
 

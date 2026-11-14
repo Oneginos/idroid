@@ -18,13 +18,14 @@ The bet: get a real iOS binary drawing pixels on Android in a week. Not all of i
 - Minimal libSystem shim: `write`, `exit`, `malloc`/`free`, `mmap`, `pthread` basics.
 - **Proof:** the hello Mach-O prints to stdout under `qemu-aarch64` in CI.
 
-## Day 3: Objective-C
+## Day 3: Objective-C  (DONE, pending CI)
 Decision (2026-11-14): write a small runtime that reads Apple's Objective-C metadata directly, instead of porting objc4.
-Why: objc4 depends on dyld shared-cache hooks, os_unfair_lock, pthread TLS keys and Apple-only C++ headers, so porting it is weeks. GNUstep's libobjc2 uses a different data layout than Apple's compiler emits. Everything a first guest needs (class lists, method lists, selector references) is plain data we can read, as `tests/objc/probe.m` shows.
-- Done: variadic calling-convention shims (printf family), data symbols, stdio. See TRACE.md.
-- Next: `objc/` runtime: `objc_msgSend` (assembly), selector interning, class registration from `__objc_classlist`, `__objc_empty_cache`, NSObject root class, `objc_alloc`/`retain`/`release`.
-- libdispatch moves to Day 4: it builds on Linux upstream, so it fits with Foundation.
-- **Proof:** the probe runs and prints `answer=42 sum=42`, then a guest subclassing NSObject with an ivar and instance methods runs in CI.
+Why: objc4 depends on dyld shared-cache hooks, os_unfair_lock, pthread TLS keys and Apple-only C++ headers, so porting it is weeks. GNUstep's libobjc2 uses a different data layout than Apple's compiler emits. Everything a first guest needs is plain data we can read in place.
+- Done: variadic calling-convention shims (printf family), data symbols, stdio.
+- Done: `objc/` runtime: `objc_msgSend` (assembly), class registration, NSObject, instances and refcounts, ARC entry points, `.cxx_destruct`, loud failure on unknown selectors.
+- Proof (all in `make run-test`): `tests/objc/probe.m` prints `answer=42 sum=42`; `counter.m` (NSObject subclass, ivars, doubles through msgSend, super calls, nil messaging, retain/release, respondsToSelector:); `arc.m` (compiled with -fobjc-arc, a 5-node chain freed by dropping its head).
+- Moved to Day 4: libdispatch (builds on Linux upstream, fits with Foundation) and blocks, which libdispatch and most real code need.
+- What the runtime does NOT do yet is listed in TRACE.md.
 
 ## Day 4: Foundation
 - Bring in CoreFoundation and Foundation pieces: strings, arrays, dictionaries, `NSFileManager`, JSON.

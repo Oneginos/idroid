@@ -30,3 +30,18 @@ Unresolved symbols, unimplemented selectors and crashes, by app and date. Newest
 - FINDING: the Objective-C compiler works under zig without any Apple SDK. Link with `-Wl,-undefined,dynamic_lookup` (zig has no libobjc stub). Foundation headers are unavailable, so test guests declare their own root classes.
 - FINDING: zig's clang emits CLASSIC 24-byte method entries (name, types, imp pointers), not relative/small method lists. Real iOS binaries built for iOS 14+ usually use RELATIVE method lists (entsizeAndFlags bit 31), so the runtime must read both.
 - FINDING: metadata sections present: __objc_classlist, __objc_classrefs, __objc_const (class_ro_t + method lists), __objc_data (class objects), __objc_selrefs, __objc_methname/methtype/classname.
+
+## objc runtime 2026-11-14 (Day 3, part 2) - what exists, and what does NOT
+- DONE: objc_msgSend / objc_msgSendSuper2 (assembly, preserves x0-x8 and q0-q7), method lookup by selector content with a per-class cache, NSObject (alloc, new, init, dealloc, class, self, retain, release, autorelease, retainCount, isEqual:, hash, isKindOfClass:, respondsToSelector:), instances with reference counts, autorelease pools, the ARC entry points (retain, release, autorelease, storeStrong, alloc, alloc_init, opt_new, the *ReturnValue family), class registry (objc_getClass), and ARC's .cxx_destruct on dealloc.
+- DONE: loud failure for an unimplemented selector: `- MISSING selector: -[Class sel]` / `+[Class sel]`, then abort.
+- TESTED: classic 24-byte method lists end to end (real compiled guests); small/relative method lists (both selector flavours) only against hand-built lists in tests/test_objc.c. Real iOS 14+ binaries use the small format, so expect to find bugs the first time one runs.
+- MISSING: categories (counted and reported at load, not applied). +load is not called. +initialize is not called automatically on first message. Protocols (conformsToProtocol:, protocol method lists). Properties and ivar metadata (class_getInstanceVariable, KVC). Method resolution and forwarding (resolveInstanceMethod:, forwardInvocation:). Class/runtime mutation APIs (class_addMethod, method_exchangeImplementations, objc_allocateClassPair).
+- MISSING: blocks (_NSConcreteStackBlock, _Block_copy, _Block_release). Needed before libdispatch or almost any real app.
+- MISSING: exceptions (@try/@catch/@throw): objc_exception_throw and the C++ unwinder personality.
+- MISSING: weak references (objc_storeWeak, objc_loadWeak), associated objects, tagged pointers (NSNumber, small NSString), non-pointer isa.
+- MISSING: NSString, NSLog, NSArray and every other Foundation class. Constant strings (@"...") need ___CFConstantStringClassReference. This is Day 4.
+- KNOWN DIFFERENCE: objc_autoreleaseReturnValue / objc_retainAutoreleasedReturnValue are not fused. A returned object stays in the autorelease pool until it drains, where Apple's runtime hands it over directly. Legal under ARC, but object lifetimes can end later than on a real device.
+- KNOWN LIMIT: not thread-safe. No locks around the class table, instance table, method cache or interning table. Needs fixing before pthread shims and libdispatch.
+- KNOWN LIMIT: live instances are tracked in a side table (anything not in it is treated as immortal) instead of inline refcounts; fine for correctness, slower than the real thing.
+- NOTE: the test compiler has no Apple SDK, so guests declare NSObject, BOOL and nil themselves. No Foundation headers means no real Foundation-based guest can be built here yet.
+

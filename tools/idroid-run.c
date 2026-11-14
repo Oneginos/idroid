@@ -8,6 +8,7 @@
  */
 #include "load.h"
 #include "macho.h"
+#include "runtime.h"
 #include "shims.h"
 
 #include <stdio.h>
@@ -34,6 +35,7 @@ static void *resolve(const char *symbol, const char *lib, unsigned flags, void *
 {
     (void)ctx;
     void *p = shim_lookup(symbol);
+    if (!p) p = objc_symbol(symbol);   /* objc_msgSend, NSObject, ARC entry points, ... */
     if (p) return p;
 
     if (flags & MACHO_BIND_WEAK_IMPORT) {
@@ -85,10 +87,18 @@ int main(int argc, char **argv, char **envp)
     if (!img.entry) { fprintf(stderr, "%s: no LC_MAIN entry point\n", argv[1]); return 1; }
     if (shim_seal() != 0) { fprintf(stderr, "cannot seal the thunk pool\n"); return 1; }
 
+    objc_image_stats_t ostats;
+    objc_register_image(&m, &img, &ostats);
+    if (ostats.categories)   fprintf(stderr, "- MISSING feature: %u Objective-C categories ignored (not implemented)\n", ostats.categories);
+    if (ostats.load_methods) fprintf(stderr, "- MISSING feature: %u classes with +load, not called (not implemented)\n", ostats.load_methods);
+    if (ostats.selrefs_ro)   fprintf(stderr, "- NOTE: %u selector references are read-only and were not interned\n", ostats.selrefs_ro);
+
     if (getenv("IDROID_VERBOSE"))
         fprintf(stderr, "[idroid] loaded at %p (slide 0x%lx): %u rebases, %u binds, %u lazy binds, entry %p%s\n",
                 (void *)img.base, (unsigned long)img.slide, img.rebases, img.binds, img.lazy_binds,
                 (void *)img.entry, img.weak_binds_ignored ? " (weak binds ignored)" : "");
+    if (getenv("IDROID_VERBOSE") && ostats.classes)
+        fprintf(stderr, "[idroid] objc: %u classes registered, %u selector references interned\n", ostats.classes, ostats.selrefs);
 
     /* dyld calls LC_MAIN's main(argc, argv, envp, apple) and then exit()s with its result. */
     typedef int (*main_fn)(int, char **, char **, char **);
